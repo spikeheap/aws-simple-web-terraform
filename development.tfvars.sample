@@ -1,0 +1,115 @@
+#
+# Terraform backend setup (during terraform init): 
+# 
+# - `bucket`: `my_bucket`
+# - `key`: `staging.tfstate`
+#
+# Then (assuming the Route53 zone is example.com) SSH into:
+# ubuntu@my_project_name-bh.example.com
+
+# This is used for naming resources, and must be in snake-case
+project_name = "TODO"
+
+# These tags are applied to all resources created by Terraform, to ease billing and management
+common_tags = {
+  Project = "TODO Sample Docker Compose Terraform Project",
+  Terraform = "true",
+  Environment = "staging"
+}
+
+#
+# Wiring
+#
+
+# These are the ports used by your web service for HTTP and (decrypted) HTTPS traffic,
+# and are used to wire up the service to the load balancer.
+# All traffic is expected to be unencrypted at this point. HTTPS termination is handled by the load balancer
+docker_compose_http_port = 5000 # TODO
+docker_compose_decrypted_https_port = 5000 # TODO
+
+#
+# Route 53 
+#
+
+route53_zone_name = "example.com." # TODO
+
+#
+# Load balancer
+#
+load_balancer_fqdn = "TODO.example.com" # Must extend the Route53 zone name
+
+# Set to 302 if you expect HTTP to be redirected to HTTPS, else 200
+load_balancer_https_healthcheck_code = "302"
+
+# Allow all traffic to access the site
+lb_allowed_cidr_blocks = ["0.0.0.0/0"]
+
+#
+# Bastion host settings
+#
+
+bastion_host_instance_type = "t2.small" # TODO
+bastion_host_instance_volume_size_gb = "120"
+
+# Add SSH public keys here for anyone you want to be able to SSH into the host
+bastion_host_ssh_public_keys = {
+  ryan_imac = "ssh-rsa AAAAB3N...", # TODO
+  ryan_mbp = "ssh-rsa AAAAB3Q..." # TODO
+}
+
+bastion_host_user_data_script = <<EOF
+apt install postgresql-client-9.5
+
+# Install Docker
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+apt-get update
+apt-cache policy docker-ce
+apt-get install -y docker-ce
+
+# Non-sudo Docker setup
+usermod -aG docker ubuntu
+
+# Install Docker Compose
+curl -L https://github.com/docker/compose/releases/download/1.18.0/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# Clone the project
+mkdir -p /var/app
+chown ubuntu /var/app
+
+# Add deploy keys
+cat <<EOT > /home/ubuntu/.ssh/id_rsa
+-----BEGIN RSA PRIVATE KEY-----
+TODO Add your private key here
+-----END RSA PRIVATE KEY-----
+EOT
+
+cat <<EOT > /home/ubuntu/.ssh/id_rsa.pub
+TODO Add your public key here
+EOT
+
+chown ubuntu /home/ubuntu/.ssh/id_rsa*
+chmod 0600 /home/ubuntu/.ssh/id_rsa*
+
+su - ubuntu -c "git clone git@github.com:TODO/YOUR_REPO /var/app"
+
+# Pull in submodules if necessary
+su - ubuntu -c "git submodule update --init --recursive"
+
+cat <<EOT > /var/radar/radar-dms-ckan/.env
+TODO set your .env vars here
+
+chown ubuntu /var/radar/radar-dms-ckan/.env
+
+cat <<EOT > /etc/motd
+************
+App Docker Compose is located at /var/app
+************
+
+EOT
+
+# Finally, start the service
+su - ubuntu -c "cd /var/app && docker-compose up -d"
+
+EOF
